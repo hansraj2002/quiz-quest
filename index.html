@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiz Quest</title>
+<style>
+body {
+  font-family: "Poppins", sans-serif;
+  background: linear-gradient(135deg,#4e54c8,#8f94fb);
+  color: #fff;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.card {
+  background: rgba(0,0,0,0.25);
+  border-radius: 16px;
+  padding: 15px 20px;
+  margin: 10px 0;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+#game, #startScreen {
+  width: 90%;
+  max-width: 500px;
+  text-align: center;
+  display:none;
+  opacity:0;
+  transform: translateY(20px);
+  transition: all 0.5s ease;
+}
+#game.show, #startScreen.show { display:block; opacity:1; transform:translateY(0);}
+h1 {margin-bottom:10px;}
+img {max-width:100%; border-radius:10px; margin-bottom:10px;}
+.btn {
+  display:block;
+  width:100%;
+  padding:10px;
+  margin:6px 0;
+  background:#fff;
+  border:none;
+  border-radius:8px;
+  color:#333;
+  font-size:1em;
+  cursor:pointer;
+  transition:0.3s;
+}
+.btn:hover {background:#4e54c8;color:#fff;}
+.correct{background:#3adb76!important;color:#fff;}
+.wrong{background:#ff6b6b!important;color:#fff;}
+.lifeline-btn {width:32%; display:inline-block;margin:4px;}
+#timer{margin-top:8px;font-weight:bold;}
+#leaderboardCard,#infoCard{max-height:200px; overflow-y:auto; text-align:left;}
+</style>
+</head>
+<body>
+<div id="startScreen" class="show">
+  <h1>Quiz Quest ⚡</h1>
+  <input id="playerName" placeholder="Enter your name" style="padding:10px;width:80%;border-radius:8px;border:none;margin-bottom:10px;font-size:1em;">
+
+  <!-- Leaderboard Card -->
+  <div class="card" id="leaderboardCard">
+    <h3>Top Players 🏆</h3>
+    <ol id="leaderList"></ol>
+  </div>
+
+  <!-- Info Card -->
+  <div class="card" id="infoCard">
+    <h3>Game Info 📌</h3>
+    <p>Total Questions: 30+</p>
+    <p>Lifelines:</p>
+    <ul>
+      <li>Make Two Choices → Gives You 2 Chances (one correct + one random wrong)</li>
+      <li>Skip → skip current question</li>
+      <li>+10s → add 10 extra seconds</li>
+    </ul>
+    <p>You have 45 seconds for each question. Wrong answer returns you to start, but your progress is saved in the leaderboard!</p>
+  </div>
+
+  <button id="startBtn" class="btn">Start Quiz</button>
+</div>
+
+<div id="game">
+  <h1>Quiz Quest ⚡</h1>
+  <img id="qImg" style="display:none"/>
+  <div id="question" class="question"></div>
+  <div id="answers"></div>
+  <div id="timer">Time: <span id="time">45</span>s</div>
+  <div>
+    <button id="twoBtn" class="btn lifeline-btn">Make Two Choices</button>
+    <button id="skipBtn" class="btn lifeline-btn">Skip</button>
+    <button id="timeBtn" class="btn lifeline-btn">+10s</button>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const startScreen = document.getElementById("startScreen");
+  const game = document.getElementById("game");
+  const playerInput = document.getElementById("playerName");
+  const startBtn = document.getElementById("startBtn");
+
+  const qText = document.getElementById("question");
+  const qImg = document.getElementById("qImg");
+  const ansBox = document.getElementById("answers");
+  const timeSpan = document.getElementById("time");
+
+  const twoBtn = document.getElementById("twoBtn");
+  const skipBtn = document.getElementById("skipBtn");
+  const timeBtn = document.getElementById("timeBtn");
+
+  let playerName = "";
+  let current = 0, timer, timeLeft = 45;
+  let lifelines = {two:true, skip:true, extra:true};
+  let leaderboardData = JSON.parse(localStorage.getItem("quizLeaderboard")||"[]");
+  const leaderList = document.getElementById("leaderList");
+
+  const questions = [
+    {q:"What is 5 × 6?", a:["30","11","25","35"], correct:0},
+    {q:"Which planet is known as the Red Planet?", a:["Venus","Mars","Jupiter","Mercury"], correct:1,
+     img:"https://upload.wikimedia.org/wikipedia/commons/0/02/OSIRIS_Mars_true_color.jpg"},
+    {q:"If a train travels 60 km in 1 hour, how far in 3 hours?", a:["120 km","150 km","180 km","200 km"], correct:2},
+    {q:"Which country’s flag is this?", a:["France","Italy","Ireland","India"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/en/c/c3/Flag_of_France.svg"},
+    {q:"What is heavier: 1 kg of cotton or 1 kg of iron?", a:["Cotton","Iron","Equal weight","Depends on volume"], correct:2},
+    {q:"Find the missing number: 2, 4, 8, 16, ?", a:["18","24","30","32"], correct:3},
+    {q:"Which animal can’t jump?", a:["Elephant","Dog","Frog","Kangaroo"], correct:0},
+    {q:"If you mix red and blue, what color do you get?", a:["Green","Purple","Orange","Brown"], correct:1},
+    {q:"Which image shows the Great Pyramid?", a:["Egypt","Mexico","Greece","China"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/commons/e/e3/Kheops-Pyramid.jpg"},
+    {q:"Which number is a prime?", a:["9","15","17","21"], correct:2},
+    {q:"If a bat and ball cost $1.10 and the bat costs $1 more than the ball, how much is the ball?", a:["$0.10","$0.05","$0.15","$0.20"], correct:0},
+    {q:"Which image shows the Statue of Liberty?", a:["New York","Paris","London","Rome"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/commons/a/a1/Statue_of_Liberty_7.jpg"},
+    {q:"I speak without a mouth and hear without ears. I have nobody, but I come alive with wind. What am I?", a:["Echo","Shadow","Fire","Water"], correct:0},
+    {q:"Solve: 12 + 15 ÷ 3 × 2 - 5 = ?", a:["19","17","21","22"], correct:2},
+    {q:"Which planet is closest to the Sun?", a:["Mercury","Venus","Earth","Mars"], correct:0},
+    {q:"What is the next number in the series: 1, 1, 2, 3, 5, 8, ?", a:["10","11","13","15"], correct:2},
+    {q:"If you flip a coin three times, what is the probability of getting exactly two heads?", a:["1/8","1/4","3/8","1/2"], correct:2},
+    {q:"Which image shows the flag of Japan?", a:["Japan","China","South Korea","Thailand"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/en/9/9e/Flag_of_Japan.svg"},
+    {q:"I am taken from a mine, and shut up in a wooden case, from which I am never released, and yet I am used by almost every person. What am I?", a:["Pencil lead","Coal","Diamond","Gold"], correct:0},
+    {q:"Which number is both a square and a cube?", a:["16","64","36","49"], correct:1},
+    {q:"If you have a 3-liter and a 5-liter jug, how can you measure exactly 4 liters?", a:["Fill 5L, pour into 3L, left=2L","Fill 3L, pour into 5L, fill 3L again","Fill 5L, pour 1L into 3L","Impossible"], correct:0},
+    {q:"Which image shows the Eiffel Tower?", a:["Paris","London","Rome","Berlin"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/commons/a/af/Tour_Eiffel_Wikimedia_Commons.jpg"},
+    {q:"I have keys but no locks. I have space but no rooms. You can enter, but you can’t go outside. What am I?", a:["Keyboard","Map","Piano","Computer"], correct:0},
+    {q:"A farmer has 17 sheep, and all but 9 die. How many are left?", a:["8","9","17","None"], correct:1},
+    {q:"Which country’s flag is this?", a:["Canada","Denmark","Switzerland","Norway"], correct:2,
+     img:"https://upload.wikimedia.org/wikipedia/commons/f/f3/Flag_of_Switzerland.svg"},
+    {q:"If 5 cats can catch 5 mice in 5 minutes, how long for 100 cats to catch 100 mice?", a:["5 min","20 min","100 min","50 min"], correct:0},
+    {q:"You have two ropes that each take an hour to burn, but burn unevenly. How can you measure 45 minutes?", a:["Light both ends of rope 1 & one end of rope 2","Impossible","Light one rope twice","Use a timer"], correct:0},
+    {q:"Which image shows the Colosseum?", a:["Rome","Athens","Istanbul","Paris"], correct:0,
+     img:"https://upload.wikimedia.org/wikipedia/commons/d/d7/Colosseo_2020.jpg"}
+  ];
+
+  function renderLeaderboardCard(){
+    leaderboardData.sort((a,b)=>b.reached - a.reached);
+    const top10 = leaderboardData.slice(0,10);
+    leaderList.innerHTML="";
+    top10.forEach(p=>{
+      const li = document.createElement("li");
+      li.textContent = `${p.name} — Questions reached: ${p.reached}`;
+      leaderList.appendChild(li);
+    });
+  }
+
+  renderLeaderboardCard();
+
+  function startGame(){
+    playerName = playerInput.value.trim() || "Player"+Math.floor(Math.random()*999);
+    startScreen.classList.remove("show");
+    game.classList.add("show");
+    current=0; lifelines={two:true,skip:true,extra:true};
+    showQuestion();
+  }
+
+  function startTimer(){
+    clearInterval(timer);
+    timeLeft=45;
+    timeSpan.textContent=timeLeft;
+    timer=setInterval(()=>{
+      timeLeft--;
+      timeSpan.textContent=timeLeft;
+      if(timeLeft<=0){clearInterval(timer); failQuestion();}
+    },1000);
+  }
+
+  function showQuestion(){
+    const q=questions[current];
+    qText.textContent=q.q;
+    if(q.img){ qImg.src=q.img; qImg.style.display="block"; }
+    else qImg.style.display="none";
+    ansBox.innerHTML="";
+    q.a.forEach((opt,i)=>{
+      const btn=document.createElement("button");
+      btn.className="btn";
+      btn.textContent=opt;
+      btn.onclick=()=>selectAnswer(i);
+      ansBox.appendChild(btn);
+    });
+    startTimer();
+    updateLifelines();
+  }
+
+  function updateLifelines(){
+    twoBtn.disabled=!lifelines.two;
+    skipBtn.disabled=!lifelines.skip;
+    timeBtn.disabled=!lifelines.extra;
+  }
+
+  function selectAnswer(i){
+    clearInterval(timer);
+    const q=questions[current];
+    const btns=document.querySelectorAll("#answers .btn");
+    btns.forEach((b,idx)=>{
+      b.disabled=true;
+      if(idx===q.correct) b.classList.add("correct");
+      else if(idx===i) b.classList.add("wrong");
+    });
+    if(i===q.correct){
+      setTimeout(()=>{nextQuestion()},1200);
+    }else{
+      setTimeout(()=>{failQuestion()},1200);
+    }
+  }
+
+  function nextQuestion(){
+    current++;
+    if(current<questions.length) showQuestion();
+    else endGame();
+  }
+
+  function failQuestion(){
+    // Save progress even on failure
+    leaderboardData.push({name:playerName, reached: current});
+    localStorage.setItem("quizLeaderboard", JSON.stringify(leaderboardData));
+    renderLeaderboardCard();
+    alert("Wrong answer! Returning to start.");
+    game.classList.remove("show");
+    startScreen.classList.add("show");
+  }
+
+  function endGame(){
+    leaderboardData.push({name:playerName, reached: current});
+    localStorage.setItem("quizLeaderboard", JSON.stringify(leaderboardData));
+    renderLeaderboardCard();
+    game.classList.remove("show");
+    startScreen.classList.add("show");
+  }
+
+  twoBtn.onclick=()=>{
+    if(!lifelines.two) return;
+    lifelines.two=false;
+    const q=questions[current];
+    const btns = Array.from(document.querySelectorAll("#answers .btn"));
+    // randomly select one wrong option to keep
+    const wrongIndexes = btns.map((b,i)=>i).filter(i=>i!==q.correct);
+    const randomWrong = wrongIndexes[Math.floor(Math.random()*wrongIndexes.length)];
+    btns.forEach((b,i)=>{
+      if(i!==q.correct && i!==randomWrong) b.disabled=true;
+    });
+    updateLifelines();
+  };
+
+  skipBtn.onclick=()=>{
+    if(!lifelines.skip) return;
+    lifelines.skip=false;
+    current++;
+    if(current>=questions.length) endGame();
+    else showQuestion();
+    updateLifelines();
+  };
+
+  timeBtn.onclick=()=>{
+    if(!lifelines.extra) return;
+    lifelines.extra=false;
+    timeLeft+=10;
+    updateLifelines();
+  };
+
+  startBtn.onclick=startGame;
+});
+</script>
+</body>
+</html>
